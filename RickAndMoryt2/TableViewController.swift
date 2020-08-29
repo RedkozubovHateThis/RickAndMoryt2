@@ -8,37 +8,26 @@
 
 import UIKit
 
-struct Character : Codable {
-    let id : Int
-    let name : String
-    let species : String
-    let image : String
-}
-
-struct CharacterList : Codable {
-    struct Info : Codable {
-        let count : Int
-        let pages : Int
-        let next : String?
-        let prev : String?
-    }
-    
-    let results : [Character]
-}
-
-class TableViewController: UITableViewController {
-
+class TableViewController: UITableViewController, UISearchResultsUpdating {
     
     var data: [Character] = [
 //        ["name": "Rick", "species": "Human", "image" : "noimage"],
 //        ["name": "Morty", "species": "Human", "image" : "noimage"],
 //        ["name": "Test", "species": "Test", "image" : "noimage"]
     ]
+    var searchData : [Character] = []
+    var info: CharacterList.Info?
+    var searchController = UISearchController()
     
     
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        searchController.searchResultsUpdater = self
+        searchController.dimsBackgroundDuringPresentation = false
+        searchController.searchBar.sizeToFit()
+        self.tableView.tableHeaderView = searchController.searchBar
+        
         self.refreshControl?.addTarget(self, action: #selector(startLoad), for: .valueChanged)
         self.refreshControl?.beginRefreshing()
         startLoad()
@@ -49,17 +38,21 @@ class TableViewController: UITableViewController {
         // self.navigationItem.rightBarButtonItem = self.editButtonItem
     }
     
-    @objc func startLoad() {
-        Timer.scheduledTimer(timeInterval: 3, target: self, selector: #selector(dataLoaded), userInfo: nil, repeats: false)
-        URLSession.shared.dataTask(with: URL(string: "https://rickandmortyapi.com/api/character/")!) { (data, response, error) in
+    func loadCharacters(_ urlString: String) {
+        URLSession.shared.dataTask(with: URL(string: urlString)!) { (data, response, error) in
             let decoder = JSONDecoder()
             let d = try! decoder.decode(CharacterList.self, from: data!)
             DispatchQueue.main.async {
+                self.data += d.results!
+                self.info = d.info
                 self.dataLoaded()
-                self.data = d.results
             }
         }.resume()
-        
+    }
+    
+    @objc func startLoad() {
+        Timer.scheduledTimer(timeInterval: 3, target: self, selector: #selector(dataLoaded), userInfo: nil, repeats: false)
+        loadCharacters("https://rickandmortyapi.com/api/character/")
     }
     
     @objc func dataLoaded() {
@@ -77,18 +70,46 @@ class TableViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         // #warning Incomplete implementation, return the number of rows
-        return data.count
+  
+        return (searchController.isActive ? searchData : data).count
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
 
-        cell.textLabel?.text = data[indexPath.row].name
-        cell.detailTextLabel?.text = data[indexPath.row].species
-        cell.imageView?.image = UIImage(named:"noimage")
-
+        if self.searchController.isActive{
+            cell.textLabel?.text = searchData[indexPath.row].name
+            cell.detailTextLabel?.text = searchData[indexPath.row].species
+            //            cell.imageView?.image = UIImage(data: data)
+            URLSession.shared.dataTask(with: URL(string: searchData[indexPath.row].image)!) { (data, response, error) in
+                DispatchQueue.main.async {
+                    if cell.tag == indexPath.row{
+                        cell.imageView?.image = UIImage(data: data!)
+                    }
+                }
+            }
+        }
+        else {
+            cell.textLabel?.text = data[indexPath.row].name
+            cell.detailTextLabel?.text = data[indexPath.row].species
+            cell.tag = indexPath.row
+            URLSession.shared.dataTask(with: URL(string: data[indexPath.row].image)!) { (data, response, error) in
+                DispatchQueue.main.async {
+                    if cell.tag == indexPath.row {
+                        cell.imageView?.image = UIImage(data: data!)
+                    }
+                }
+            }.resume()
+            cell.imageView?.image = UIImage(named:"noimage")
+            
+            if indexPath.row == data.count - 2 {
+                loadCharacters(info!.next!)
+            }
+        }
+        
         return cell
     }
+        
 
     /*
     // Override to support conditional editing of the table view.
@@ -125,6 +146,27 @@ class TableViewController: UITableViewController {
     }
     */
 
+    // MARK - UISearchResultUpdatio
+    func updateSearchResults(for searchController: UISearchController) {
+        if let hero = searchController.searchBar.text {
+            if hero.count >= 3 {
+                if let url = URL(string: "https://rickandmortyapi.com/api/character/?name=\(hero)") {
+                    URLSession.shared.dataTask(with: url) { (data, response, error) in
+                        let decoder = JSONDecoder()
+                        let d = try! decoder.decode(CharacterList.self, from: data!)
+                        DispatchQueue.main.async {
+                            self.searchData = (d.error == nil ? d.results! : [])
+                            //self.info = d.info
+                            self.dataLoaded()
+                        }
+                    }.resume()
+                }
+            }
+        }
+        
+        self.tableView.reloadData()
+    }
+    
     /*
     // MARK: - Navigation
 
