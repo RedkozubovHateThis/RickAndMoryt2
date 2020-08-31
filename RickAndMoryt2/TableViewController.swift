@@ -8,17 +8,21 @@
 
 import UIKit
 
-class TableViewController: UITableViewController, UISearchResultsUpdating {
+class TableViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, UISearchResultsUpdating {
     
     var data: [Character] = [
 //        ["name": "Rick", "species": "Human", "image" : "noimage"],
 //        ["name": "Morty", "species": "Human", "image" : "noimage"],
 //        ["name": "Test", "species": "Test", "image" : "noimage"]
     ]
+    
+    var searchInfo: CharacterList.Info?
     var searchData : [Character] = []
     var info: CharacterList.Info?
     var searchController = UISearchController()
     
+    @IBOutlet var tableView: UITableView!
+    var refreshControl: UIRefreshControl? = UIRefreshControl()
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -27,6 +31,8 @@ class TableViewController: UITableViewController, UISearchResultsUpdating {
         searchController.dimsBackgroundDuringPresentation = false
         searchController.searchBar.sizeToFit()
         self.tableView.tableHeaderView = searchController.searchBar
+        self.tableView.refreshControl = self.refreshControl
+        //self.tableView.insetsContentViewsToSafeArea = true
         
         self.refreshControl?.addTarget(self, action: #selector(startLoad), for: .valueChanged)
         self.refreshControl?.beginRefreshing()
@@ -36,6 +42,11 @@ class TableViewController: UITableViewController, UISearchResultsUpdating {
 
         // Uncomment the following line to display an Edit button in the navigation bar for this view controller.
         // self.navigationItem.rightBarButtonItem = self.editButtonItem
+        self.navigationController?.setNavigationBarHidden(true, animated: false)
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        self.navigationController?.setNavigationBarHidden(true, animated: true)
     }
     
     func loadCharacters(_ urlString: String) {
@@ -50,9 +61,24 @@ class TableViewController: UITableViewController, UISearchResultsUpdating {
         }.resume()
     }
     
+    func searchCharacters(_ urlString: String) {
+           URLSession.shared.dataTask(with: URL(string: urlString)!) { (data, response, error) in
+            if error == nil {
+               let decoder = JSONDecoder()
+               let d = try! decoder.decode(CharacterList.self, from: data!)
+               DispatchQueue.main.async {
+                   self.searchData += d.results!
+                   self.searchInfo = d.info
+                   self.dataLoaded()
+               }
+            }
+           }.resume()
+       }
+    
     @objc func startLoad() {
         Timer.scheduledTimer(timeInterval: 3, target: self, selector: #selector(dataLoaded), userInfo: nil, repeats: false)
         loadCharacters("https://rickandmortyapi.com/api/character/")
+        
     }
     
     @objc func dataLoaded() {
@@ -63,18 +89,18 @@ class TableViewController: UITableViewController, UISearchResultsUpdating {
 
     // MARK: - Table view data source
 
-    override func numberOfSections(in tableView: UITableView) -> Int {
+    func numberOfSections(in tableView: UITableView) -> Int {
         return 1
 //        return (self.refreshControl!.isRefreshing) ? 0 : 1
     }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         // #warning Incomplete implementation, return the number of rows
   
         return (searchController.isActive ? searchData : data).count
     }
 
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
 
         if self.searchController.isActive{
@@ -87,6 +113,9 @@ class TableViewController: UITableViewController, UISearchResultsUpdating {
                         cell.imageView?.image = UIImage(data: data!)
                     }
                 }
+            }
+            if let next = searchInfo?.next, indexPath.row == searchData.count - 2 {
+                searchCharacters(next)
             }
         }
         else {
@@ -148,6 +177,8 @@ class TableViewController: UITableViewController, UISearchResultsUpdating {
 
     // MARK - UISearchResultUpdatio
     func updateSearchResults(for searchController: UISearchController) {
+        /*
+         
         if let hero = searchController.searchBar.text {
             if hero.count >= 3 {
                 if let url = URL(string: "https://rickandmortyapi.com/api/character/?name=\(hero)") {
@@ -165,16 +196,34 @@ class TableViewController: UITableViewController, UISearchResultsUpdating {
         }
         
         self.tableView.reloadData()
+ */
+        guard let hero = searchController.searchBar.text, hero.count >= 3 else {
+            self.searchData = []
+            self.dataLoaded()
+            return
+        }
+        let text = hero.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
+        if let url = URL(string: "https://rickandmortyapi.com/api/character/?name=\(text)") {
+            URLSession.shared.dataTask(with: url) { (data, response, error) in
+                let d = try! JSONDecoder().decode(CharacterList.self, from: data!)
+                DispatchQueue.main.async {
+                    self.searchData = d.results ?? []
+                    self.searchInfo = d.info
+                    self.dataLoaded()
+                }
+            }.resume()
+        }
     }
     
-    /*
     // MARK: - Navigation
-
     // In a storyboard-based application, you will often want to do a little preparation before navigation
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
         // Get the new view controller using segue.destination.
         // Pass the selected object to the new view controller.
+        if segue.identifier == "detail" {
+            let vc = segue.destination as! DetailViewController
+            vc.character = self.data[self.tableView.indexPathForSelectedRow!.row]
+        }
     }
-    */
 
 }

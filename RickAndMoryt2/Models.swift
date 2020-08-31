@@ -13,6 +13,9 @@ struct Character : Codable {
     let name : String
     let species : String
     let image : String
+    let gender: String
+    let type: String
+    let status: String
 }
 
 struct CharacterList : Codable {
